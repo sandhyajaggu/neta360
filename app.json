@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Neta360",
+    "slug": "neta360",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-brand.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F4C5C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.inturi.neta360"
+    },
+    "android": {
+      "package": "com.inturi.neta360",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-brand.png",
+          "imageWidth": 280,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F4C5C"
+        }
+      ]
+    ]
+  }
+}
