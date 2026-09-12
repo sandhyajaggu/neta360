@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-brand.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0F4C5C"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.inturi.neta360"
@@ -36,6 +31,12 @@
           "backgroundColor": "#0F4C5C"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "37993628-80bb-43dc-8454-7d922350870a"
+      }
+    },
+    "owner": "sandhya_97"
   }
 }
