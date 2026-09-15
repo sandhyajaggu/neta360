@@ -107,4 +107,19 @@ async function migrate(db) {
       PRAGMA user_version = 2;
     `);
   }
+
+  // Supplementary voter-profile fields not yet sent by the admin website —
+  // operator-entered locally until the server starts supplying them.
+  if (version < 3) {
+    await db.execAsync(`
+      ALTER TABLE voters ADD COLUMN dob TEXT;
+      ALTER TABLE voters ADD COLUMN voter_status TEXT;
+      ALTER TABLE voters ADD COLUMN street TEXT;
+      ALTER TABLE voters ADD COLUMN village TEXT;
+      ALTER TABLE voters ADD COLUMN ward TEXT;
+      ALTER TABLE voters ADD COLUMN alt_mobile TEXT;
+      ALTER TABLE voters ADD COLUMN mobile_verified INTEGER NOT NULL DEFAULT 0;
+      PRAGMA user_version = 3;
+    `);
+  }
 }

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../storage/secureStore';
 import { api, setToken } from '../api/client';
 import { clearAllData, getMeta, getOutboxSummary, setMeta } from '../db/repo';
 

@@ -1,5 +1,6 @@
 // A pretend backend so the app can be tried on a phone without a server.
 import { ApiError } from './errors';
+import { getMeta, setMeta } from '../db/repo';
 
 // Login with phone 9000000001 and password demo123.
 // It mimics the exact responses of the real FastAPI endpoints.
@@ -55,7 +56,49 @@ const state = {
   surveyCounts: {},
   households: {},
   processed: new Set(),
+  otps: {}, // voter_id -> { code, mobile_number, expiresAt }
 };
+
+// This pretend backend otherwise lives only in memory, so every app reload would "forget"
+// mobile numbers, family mappings and turnout the operator already saved — and the next
+// auto-sync would then overwrite the (still-intact) local database with that amnesia.
+// Persisting it into the same local database that survives reloads avoids that.
+const STATE_KEY = 'demo_backend_state';
+let hydrating = null;
+
+async function ensureHydrated() {
+  if (!hydrating) {
+    hydrating = (async () => {
+      try {
+        const raw = await getMeta(STATE_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          state.mobile = saved.mobile || {};
+          state.turnout = saved.turnout || {};
+          state.surveyCounts = saved.surveyCounts || {};
+          state.households = saved.households || {};
+          state.processed = new Set(saved.processed || []);
+        }
+      } catch {
+        // Corrupt or missing saved state — start fresh rather than fail the request.
+      }
+    })();
+  }
+  await hydrating;
+}
+
+async function persist() {
+  await setMeta(
+    STATE_KEY,
+    JSON.stringify({
+      mobile: state.mobile,
+      turnout: state.turnout,
+      surveyCounts: state.surveyCounts,
+      households: state.households,
+      processed: [...state.processed],
+    })
+  );
+}
 
 const BOOTH = { booth_no: 142, name: 'MPP School, Room 2', village: 'Kandukur', mandal: 'Kandukur' };
 const OPERATOR = { id: 7, name: 'Demo Operator', phone: '9000000001' };
@@ -127,7 +170,30 @@ export async function demoRequest(path, method, body) {
     }
     throw new ApiError('Wrong phone number or password.', 401);
   }
+  await ensureHydrated();
   if (path.startsWith('/api/mobile/sync/pull')) return pull();
-  if (path === '/api/mobile/sync/push') return push(body.ops);
+  if (path === '/api/mobile/sync/push') {
+    const res = push(body.ops);
+    await persist();
+    return res;
+  }
+  if (path === '/api/mobile/voters/otp/send') {
+    if (!/^\d{10}$/.test(body.mobile_number || '')) throw new ApiError('Enter a valid 10-digit mobile number.', 400);
+    const code = String(100000 + Math.floor(Math.random() * 900000));
+    state.otps[body.voter_id] = { code, mobile_number: body.mobile_number, expiresAt: Date.now() + 5 * 60 * 1000 };
+    // demo_otp only appears in demo mode, standing in for the SMS a real gateway would send.
+    // Also logged because Alert.alert is a no-op on web (react-native-web), so that's the
+    // only place a web tester could otherwise see it.
+    console.log(`[Neta360 demo] OTP for voter ${body.voter_id} (${body.mobile_number}): ${code}`);
+    return { sent: true, expires_in: 300, demo_otp: code };
+  }
+  if (path === '/api/mobile/voters/otp/verify') {
+    const rec = state.otps[body.voter_id];
+    if (!rec || rec.mobile_number !== body.mobile_number) throw new ApiError('Request a new OTP first.', 400);
+    if (Date.now() > rec.expiresAt) throw new ApiError('OTP expired. Request a new one.', 400);
+    if (rec.code !== String(body.otp || '')) throw new ApiError('Incorrect OTP.', 400);
+    delete state.otps[body.voter_id];
+    return { verified: true };
+  }
   throw new Error(`Demo backend has no route for ${method} ${path}`);
 }

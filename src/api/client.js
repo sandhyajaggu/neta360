@@ -58,4 +58,8 @@ export const api = {
         (notificationsSince ? `?notifications_since=${encodeURIComponent(notificationsSince)}` : '')
     ),
   push: (ops) => request('/api/mobile/sync/push', { method: 'POST', body: { ops } }),
+  sendMobileOtp: (voterId, mobileNumber) =>
+    request('/api/mobile/voters/otp/send', { method: 'POST', body: { voter_id: voterId, mobile_number: mobileNumber } }),
+  verifyMobileOtp: (voterId, mobileNumber, otp) =>
+    request('/api/mobile/voters/otp/verify', { method: 'POST', body: { voter_id: voterId, mobile_number: mobileNumber, otp } }),
 };

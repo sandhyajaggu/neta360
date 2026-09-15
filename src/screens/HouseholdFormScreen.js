@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { useLiveData } from '../components/useLiveData';
-import { Badge, Button, Field, SearchBar } from '../components/ui';
+import { Badge, Button, SearchBar } from '../components/ui';
 import { getHousehold, getVoter, listCandidateMembers, saveHousehold } from '../db/repo';
 import { colors, radius, space, type } from '../theme';
 
@@ -15,8 +15,6 @@ export default function HouseholdFormScreen({ route, navigation }) {
   const { session } = useAuth();
   const { notifyLocalChange } = useSync();
 
-  const [houseNo, setHouseNo] = useState('');
-  const [address, setAddress] = useState('');
   const [members, setMembers] = useState({}); // id -> voter
   const [headId, setHeadId] = useState(null);
   const [search, setSearch] = useState('');
@@ -33,8 +31,6 @@ export default function HouseholdFormScreen({ route, navigation }) {
       if (householdId) {
         const h = await getHousehold(householdId);
         if (h) {
-          setHouseNo(h.house_no || '');
-          setAddress(h.address || '');
           setFamilyCode(h.family_code);
           setMembers(Object.fromEntries(h.members.map((m) => [m.id, m])));
           setHeadId(h.head_voter_id);
@@ -42,7 +38,6 @@ export default function HouseholdFormScreen({ route, navigation }) {
       } else if (seedVoterId) {
         const v = await getVoter(seedVoterId);
         if (v) {
-          setHouseNo(v.house_no || '');
           setMembers({ [v.id]: v });
           setHeadId(v.id);
         }
@@ -52,8 +47,8 @@ export default function HouseholdFormScreen({ route, navigation }) {
   }, [householdId, seedVoterId]);
 
   const { data: candidates } = useLiveData(
-    () => listCandidateMembers({ houseNo, search, householdId }),
-    [houseNo, search, householdId]
+    () => listCandidateMembers({ search, householdId }),
+    [search, householdId]
   );
   const available = (candidates || []).filter((v) => !members[v.id]);
   const memberList = Object.values(members).sort((a, b) => (b.age || 0) - (a.age || 0));
@@ -73,14 +68,11 @@ export default function HouseholdFormScreen({ route, navigation }) {
   async function onSave() {
     const ids = Object.keys(members);
     if (!ids.length) return Alert.alert('Add at least one member', 'Pick voters from the list below.');
-    if (!houseNo.trim()) return Alert.alert('House number is needed', 'Enter the house number of this family.');
     setSaving(true);
     try {
       const id = await saveHousehold({
         id: householdId,
         boothNo: session.booth.booth_no,
-        houseNo: houseNo.trim(),
-        address: address.trim(),
         headVoterId: headId && members[headId] ? headId : ids[0],
         memberIds: ids,
       });
@@ -100,8 +92,6 @@ export default function HouseholdFormScreen({ route, navigation }) {
       {familyCode ? <Text style={styles.code}>Family ID {familyCode}</Text> : (
         <Text style={styles.help}>A Family ID is created automatically when you save.</Text>
       )}
-      <Field label="House number" value={houseNo} onChangeText={setHouseNo} placeholder="e.g. 4-12" autoCapitalize="characters" />
-      <Field label="Address or landmark (optional)" value={address} onChangeText={setAddress} placeholder="e.g. Near Rama temple" />
 
       <Text style={styles.groupTitle}>Members ({memberList.length})</Text>
       {memberList.length === 0 ? <Text style={styles.help}>No members yet. Tap voters below to add them.</Text> : null}
@@ -129,13 +119,15 @@ export default function HouseholdFormScreen({ route, navigation }) {
       ))}
 
       <Text style={[styles.groupTitle, { marginTop: space.xl }]}>Add voters</Text>
-      <Text style={styles.help}>Voters with the same house number are shown first. Only voters without a family are listed.</Text>
-      <SearchBar value={search} onChangeText={setSearch} placeholder="Search name, serial or EPIC" />
+      <Text style={styles.help}>Only voters without a family are listed.</Text>
     </View>
   );
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.top}>
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Search name, serial or EPIC" />
+      </View>
       <FlatList
         data={available}
         keyExtractor={(v) => v.id}
@@ -152,7 +144,6 @@ export default function HouseholdFormScreen({ route, navigation }) {
                 {item.gender} {item.age} · House {item.house_no || '—'} · {item.relation_type} {item.relation_name}
               </Text>
             </View>
-            {houseNo.trim() && item.house_no === houseNo.trim() ? <Badge label="Same house" tone="success" /> : null}
           </Pressable>
         )}
         ListEmptyComponent={<Text style={[styles.help, { paddingHorizontal: space.lg }]}>No more voters without a family match this search.</Text>}
@@ -165,6 +156,7 @@ export default function HouseholdFormScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  top: { padding: space.lg, paddingBottom: space.sm },
   code: { ...type.heading, color: colors.primary, marginBottom: space.lg },
   help: { ...type.small, color: colors.muted, marginBottom: space.md, lineHeight: 20 },
   groupTitle: { ...type.heading, color: colors.ink, marginBottom: space.sm },

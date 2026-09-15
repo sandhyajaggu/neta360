@@ -66,11 +66,17 @@ export async function getDashboardStats() {
 }
 
 // ── voters ───────────────────────────────────────────────────
+// Mapped = the voter belongs to a household (Family ID), which in turn
+// belongs to this booth — so household_id set is the whole Voter → Booth →
+// Household → Family ID chain being complete.
 export const VOTER_FILTERS = {
   all: null,
-  no_family: 'v.household_id IS NULL',
-  no_phone: "(v.mobile_number IS NULL OR v.mobile_number = '')",
-  not_surveyed: 'v.survey_count = 0',
+  mapped: 'v.household_id IS NOT NULL',
+  not_mapped: 'v.household_id IS NULL',
+  mobile_available: "(v.mobile_number IS NOT NULL AND v.mobile_number <> '')",
+  mobile_missing: "(v.mobile_number IS NULL OR v.mobile_number = '')",
+  survey_completed: 'v.survey_count > 0',
+  survey_pending: 'v.survey_count = 0',
   not_voted: 'v.is_voted = 0',
   voted: 'v.is_voted = 1',
 };
@@ -86,8 +92,8 @@ export async function listVoters({ search = '', filter = 'all', limit = 300 } = 
       params.push(Number(s), `${s}%`, `%${s}%`);
     } else {
       const like = `%${s}%`;
-      where.push('(v.name LIKE ? OR v.epic_no LIKE ? OR v.relation_name LIKE ? OR v.house_no LIKE ?)');
-      params.push(like, like, like, `${s}%`);
+      where.push('(v.name LIKE ? OR v.epic_no LIKE ? OR v.relation_name LIKE ? OR v.house_no LIKE ? OR h.family_code LIKE ?)');
+      params.push(like, like, like, `${s}%`, like);
     }
   }
   if (VOTER_FILTERS[filter]) where.push(VOTER_FILTERS[filter]);
@@ -118,6 +124,39 @@ export async function updateVoterPhone(voterId, mobileNumber) {
   });
 }
 
+// Called once the OTP sent to this number has been verified against the server.
+export async function confirmVoterMobile(voterId, mobileNumber) {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync('UPDATE voters SET mobile_number = ?, mobile_verified = 1 WHERE id = ?', n(mobileNumber), voterId);
+    await enqueueVoterState(txn, voterId);
+  });
+}
+
+// Supplementary profile fields the admin website doesn't send yet — the
+// operator can fill these in on the phone until the server starts supplying them.
+// mobile_verified is not settable here — it is only ever set by confirmVoterMobile,
+// once the operator actually verifies an OTP sent to the number.
+export async function updateVoterProfile(voterId, { dob, voterStatus, street, village, ward, altMobile } = {}) {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(
+      `UPDATE voters SET dob = ?, voter_status = ?, street = ?, village = ?, ward = ?, alt_mobile = ? WHERE id = ?`,
+      n(dob), n(voterStatus), n(street), n(village), n(ward), n(altMobile), voterId
+    );
+    const v = await txn.getFirstAsync('SELECT * FROM voters WHERE id = ?', voterId);
+    await enqueue(txn, 'voter_profile', 'upsert', voterId, {
+      voter_id: voterId,
+      dob: v.dob,
+      voter_status: v.voter_status,
+      street: v.street,
+      village: v.village,
+      ward: v.ward,
+      alt_mobile: v.alt_mobile,
+    });
+  });
+}
+
 // ── households / Family IDs ──────────────────────────────────
 export async function listHouseholds(search = '') {
   const db = await getDb();
@@ -145,8 +184,8 @@ export async function getHousehold(id) {
   return { ...household, members };
 }
 
-// Voters not yet in a family. Voters whose house number matches come first.
-export async function listCandidateMembers({ houseNo = '', search = '', householdId = null }) {
+// Voters not yet in a family.
+export async function listCandidateMembers({ search = '', householdId = null }) {
   const db = await getDb();
   const s = search.trim();
   const like = `%${s}%`;
@@ -155,9 +194,9 @@ export async function listCandidateMembers({ houseNo = '', search = '', househol
      LEFT JOIN households h ON h.id = v.household_id
      WHERE (v.household_id IS NULL OR v.household_id = ?)
        AND (? = '' OR v.name LIKE ? OR v.epic_no LIKE ? OR v.house_no LIKE ? OR CAST(v.serial_no AS TEXT) = ?)
-     ORDER BY CASE WHEN ? <> '' AND v.house_no = ? THEN 0 ELSE 1 END, v.house_no, v.serial_no
+     ORDER BY v.house_no, v.serial_no
      LIMIT 200`,
-    householdId, s, like, like, like, s, houseNo.trim(), houseNo.trim()
+    householdId, s, like, like, like, s
   );
 }
 
@@ -180,21 +219,21 @@ async function nextFamilyCode(db, boothNo) {
   return prefix + String(next).padStart(3, '0');
 }
 
-export async function saveHousehold({ id, boothNo, houseNo, address, headVoterId, memberIds }) {
+export async function saveHousehold({ id, boothNo, headVoterId, memberIds }) {
   const db = await getDb();
   let householdId = id;
   await db.withExclusiveTransactionAsync(async (txn) => {
     if (householdId) {
       await txn.runAsync(
-        'UPDATE households SET house_no = ?, address = ?, head_voter_id = ?, updated_at = ? WHERE id = ?',
-        n(houseNo), n(address), n(headVoterId), now(), householdId
+        'UPDATE households SET head_voter_id = ?, updated_at = ? WHERE id = ?',
+        n(headVoterId), now(), householdId
       );
     } else {
       householdId = newId();
       const code = await nextFamilyCode(txn, boothNo);
       await txn.runAsync(
-        'INSERT INTO households (id, family_code, house_no, address, head_voter_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        householdId, code, n(houseNo), n(address), n(headVoterId), now()
+        'INSERT INTO households (id, family_code, head_voter_id, updated_at) VALUES (?, ?, ?, ?)',
+        householdId, code, n(headVoterId), now()
       );
     }
     const h = await txn.getFirstAsync('SELECT * FROM households WHERE id = ?', householdId);
@@ -408,6 +447,9 @@ export async function applyPull(data) {
     }
 
     // Voters: full list for the booth
+    // dob/voter_status/street/village/ward/alt_mobile/mobile_verified are not sent by the
+    // admin website yet, so ON CONFLICT deliberately leaves them alone — they are only ever
+    // written locally via updateVoterProfile, and a re-sync must not erase what the operator entered.
     const upsertMaster = await txn.prepareAsync(`
       INSERT INTO voters (id, serial_no, epic_no, name, relation_type, relation_name, gender, age, house_no, section,
                           mobile_number, household_id, is_voted, voted_at, voted_party, survey_count)

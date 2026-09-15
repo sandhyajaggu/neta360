@@ -64,7 +64,7 @@ export default function DashboardScreen({ navigation }) {
           title="Find voters without a family"
           icon="search"
           variant="secondary"
-          onPress={() => navigation.navigate('Voters', { filter: 'no_family' })}
+          onPress={() => navigation.navigate('Voters', { filter: 'not_mapped' })}
         />
       </View>
     </ScrollView>

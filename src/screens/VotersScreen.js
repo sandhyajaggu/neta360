@@ -7,9 +7,12 @@ import { colors, space, type } from '../theme';
 
 const FILTERS = [
   ['all', 'All'],
-  ['no_family', 'No family'],
-  ['no_phone', 'No phone'],
-  ['not_surveyed', 'Not surveyed'],
+  ['mapped', 'Mapped'],
+  ['not_mapped', 'Not mapped'],
+  ['mobile_available', 'Mobile available'],
+  ['mobile_missing', 'Mobile missing'],
+  ['survey_completed', 'Survey completed'],
+  ['survey_pending', 'Survey pending'],
 ];
 
 export default function VotersScreen({ navigation, route }) {
@@ -26,7 +29,7 @@ export default function VotersScreen({ navigation, route }) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={styles.top}>
-        <SearchBar value={search} onChangeText={setSearch} placeholder="Name, serial no, EPIC or house no" />
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Name, Voter ID, house no or Family ID" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: space.md }}>
           {FILTERS.map(([key, label]) => (
             <Chip key={key} label={label} active={filter === key} onPress={() => setFilter(key)} />
@@ -54,16 +57,17 @@ export default function VotersScreen({ navigation, route }) {
 }
 
 export function VoterRow({ voter, onPress, right }) {
+  const mapped = !!voter.household_id;
   return (
     <ListRow
       onPress={onPress}
       title={`${voter.serial_no}. ${voter.name}`}
-      subtitle={`${voter.gender || ''} ${voter.age || ''} · House ${voter.house_no || '—'} · ${voter.epic_no || ''}`}
+      subtitle={`EPIC ${voter.epic_no || '—'} · House ${voter.house_no || '—'} · Family ${voter.family_code || '—'}`}
       right={right}
       meta={
         <>
-          {voter.family_code ? <Badge label={voter.family_code} tone="primary" /> : <Badge label="No family" tone="warn" />}
-          {voter.mobile_number ? <Badge label="Phone" tone="success" /> : null}
+          <Badge label={mapped ? '✓ Mapped' : '✗ Not mapped'} tone={mapped ? 'success' : 'danger'} />
+          {voter.mobile_number ? <Badge label="Mobile available" tone="success" /> : <Badge label="Mobile missing" tone="warn" />}
           {voter.survey_count > 0 ? <Badge label="Surveyed" tone="success" /> : null}
           {voter.is_voted ? <Badge label="Voted" tone="success" /> : null}
         </>
